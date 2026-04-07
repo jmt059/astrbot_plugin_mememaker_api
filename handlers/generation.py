@@ -186,7 +186,7 @@ class GenerationHandlers:
         5. 在任务结束时（成功、失败或超时），清理会话状态和提示消息
         """
         try:
-            # 从“状态中心”获取自己的专属状态
+            # 从"状态中心"获取自己的专属状态
             session_state = self.active_sessions.get(session_id)
             if not session_state: 
                 logger.warning(f"后台工人启动，但未找到会话 {session_id} 的状态。")
@@ -194,7 +194,7 @@ class GenerationHandlers:
             
             p = session_state["params"]
 
-            # 这是一个嵌套函数，只负责最后的“制作-发送”步骤
+            # 这是一个嵌套函数，只负责最后的"制作-发送"步骤
             async def _final_generate_and_send():
                 try:
                     # 再次获取最新状态，以防万一
@@ -208,7 +208,7 @@ class GenerationHandlers:
                     image_payload = [{"id": img_id, "name": f"img{i}"} for i, img_id in enumerate(image_ids)]
                     final_payload = {"texts": final_texts, "images": image_payload, "options": state.get("options", {})}
                     
-                    # 更新状态为“正在制作中”，实现状态锁
+                    # 更新状态为"正在制作中"，实现状态锁
                     self.active_sessions[session_id]["status"] = "generating"
                     
                     image_data = await self.api_client.generate_meme(meme_info.key, final_payload)
@@ -234,7 +234,7 @@ class GenerationHandlers:
                 if len(session_state["texts"]) < p.min_texts: prompts.append(f"需要 {p.min_texts - len(session_state['texts'])} 段文字")
                 if len(session_state["images"]) < p.min_images: prompts.append(f"需要 {p.min_images - len(session_state['images'])} 张图片")
                 prompt_text = f"参数不足，请继续发送{'、'.join(prompts)}。{self.session_timeout}秒内无操作将自动取消。"
-                cancel_hint = f"\n（可发送“{self.prefix}取消”来随时终止）"
+                cancel_hint = f"\n（可发送"{self.prefix}取消"来随时终止）"
                 await self._send_and_record(event, prompt_text + cancel_hint)
 
                 # 进入循环等待状态
@@ -292,15 +292,15 @@ class GenerationHandlers:
             self.active_sessions.pop(session_id, None)
             logger.debug(f"后台工人任务结束，会话 {session_id} 已清理。")
 
-    async def handle_shortcut(self, event: AstrMessageEvent, meme: MemeInfo, shortcut: Dict, match: re.Match, remaining_text: str = “”):
+    async def handle_shortcut(self, event: AstrMessageEvent, meme: MemeInfo, shortcut: Dict, match: re.Match, remaining_text: str = ""):
         try:
-            logger.debug(f”快捷指令匹配成功: {meme.key}”); match_dict = match.groupdict()
-            texts = [t.format(**match_dict) for t in shortcut.get(“texts”, [])]
-            options = {k: v.format(**match_dict) if isinstance(v, str) else v for k, v in shortcut.get(“options”, {}).items()}
-            names = [n.format(**match_dict) for n in shortcut.get(“names”, [])]
-            event.set_extra(“shortcut_names”, names)
+            logger.debug(f"快捷指令匹配成功: {meme.key}")
+            match_dict = match.groupdict()
+            texts = [t.format(**match_dict) for t in shortcut.get("texts", [])]
+            options = {k: v.format(**match_dict) if isinstance(v, str) else v for k, v in shortcut.get("options", {}).items()}
+            names = [n.format(**match_dict) for n in shortcut.get("names", [])]
+            event.set_extra("shortcut_names", names)
 
-            # 【核心修改】将剩余文本传递给生成处理器，使快捷指令后的参数能被正确解析
             await self.meme_generate_handler(event, meme, remaining_text, initial_options=options, initial_texts=texts)
 
         except Exception as e:
@@ -311,7 +311,7 @@ class GenerationHandlers:
 
     async def meme_generate_handler(self, event: AstrMessageEvent, meme_info: MemeInfo, text: str, initial_options: Dict = {}, initial_texts: List[str] = []):
         """
-        现在只作为一个快速响应的“启动器”。
+        现在只作为一个快速响应的"启动器"。
         它的职责是：检查状态锁 -> 创建会话状态 -> 启动后台工人 -> 立刻返回。
         """
         session_id = UserInGroupSessionFilter().filter(event)
