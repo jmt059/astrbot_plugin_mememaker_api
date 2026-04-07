@@ -193,7 +193,11 @@ class MemeMakerApiPlugin(
             for sc_data in self.meme_manager.shortcuts:
                 if await self.recorder.is_meme_disabled(sc_data["meme"].key, event.get_group_id()): continue
                 if match := sc_data["pattern"].fullmatch(cleaned_text):
-                    asyncio.create_task(self.handle_shortcut(event, sc_data["meme"], sc_data["shortcut"], match))
+                    asyncio.create_task(self.handle_shortcut(event, sc_data["meme"], sc_data["shortcut"], match, ""))
+                    return
+                if match := sc_data["pattern"].match(cleaned_text):
+                    remaining_text = cleaned_text[match.end():].strip()
+                    asyncio.create_task(self.handle_shortcut(event, sc_data["meme"], sc_data["shortcut"], match, remaining_text))
                     return
             
             if keyword := self.meme_manager.find_keyword_in_text(cleaned_text, self.fuzzy_match):

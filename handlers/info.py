@@ -30,14 +30,13 @@ class InfoHandlers:
         text += f"\n    说明: {option.description or '无'}"
         
         additions = []
-        option_dict = option.model_dump()
         if option.type in ["integer", "float"]:
-            if "minimum" in option_dict and option_dict["minimum"] is not None:
-                additions.append(f"最小: {option_dict['minimum']}")
-            if "maximum" in option_dict and option_dict['maximum'] is not None:
-                additions.append(f"最大: {option_dict['maximum']}")
-        if option.type == "string" and option_dict.get("choices"):
-            additions.append(f"可选: {', '.join(option_dict['choices'])}")
+            if option.minimum is not None:
+                additions.append(f"最小: {option.minimum}")
+            if option.maximum is not None:
+                additions.append(f"最大: {option.maximum}")
+        if option.choices:
+            additions.append(f"可选: {', '.join(str(c) for c in option.choices)}")
         if option.default is not None:
             additions.append(f"默认: {option.default}")
             

@@ -7,6 +7,9 @@ class MemeOption(BaseModel):
     type: str
     default: Optional[Any] = None
     description: Optional[str] = None
+    choices: Optional[List[Any]] = None
+    minimum: Optional[Any] = None
+    maximum: Optional[Any] = None
     parser_flags: Dict[str, Any] = Field(default_factory=dict)
 
 class MemeParams(BaseModel):
