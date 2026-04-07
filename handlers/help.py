@@ -62,7 +62,7 @@ class HelpHandlers:
             event.stop_event()
 
     async def handle_meme_help(self, event: AstrMessageEvent, _=None):
-        p = getattr(self, "prefix", "-")
+        p = self.prefix
         help_text = (
             f"【基础指令】\n"
             f"{p}表情列表: 查看所有支持表情\n"
