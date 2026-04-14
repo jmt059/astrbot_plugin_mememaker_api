@@ -9,7 +9,7 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 
 class HelpHandlers:
-    """一个 Mixin 类，只包含表情列表指令的处理器"""
+    """一个 Mixin 类，包含表情帮助和表情列表相关的指令处理器"""
 
     async def handle_meme_list(self, event: AstrMessageEvent, _=None):
         try:
