@@ -199,13 +199,13 @@ class GenerationHandlers:
                 try:
                     # 再次获取最新状态，以防万一
                     state = self.active_sessions.get(session_id, {})
-                    final_texts, final_images = state.get("texts", []), state.get("images", [])
+                    final_texts, final_images, image_names = state.get("texts", []), state.get("images", []), state.get("image_names", [])
                     final_texts = final_texts[:p.max_texts]
                     final_images = final_images[:p.max_images]
 
                     tasks = [self.api_client.upload_image(b) for b in final_images]
                     image_ids = await asyncio.gather(*tasks)
-                    image_payload = [{"id": img_id, "name": f"img{i}"} for i, img_id in enumerate(image_ids)]
+                    image_payload = [{"id": img_id, "name": image_names[i] if i < len(image_names) else f"img{i}"} for i, img_id in enumerate(image_ids)]
                     final_payload = {"texts": final_texts, "images": image_payload, "options": state.get("options", {})}
                     
                     # 更新状态为“正在制作中”，实现状态锁
@@ -255,13 +255,17 @@ class GenerationHandlers:
                     needs_text = len(session_state["texts"]) < p.min_texts
                     needs_image = len(session_state["images"]) < p.min_images
                     provided_text = next_event.get_message_str().strip()
-                    provided_images = await self._get_images_from_message(next_event)
+                    provided_data = await self._get_images_from_message(next_event)
+                    provided_images = [item[0] for item in provided_data]
+                    provided_names = [item[1] for item in provided_data]
                     is_valid_and_needed_input = (needs_text and provided_text) or (needs_image and provided_images)
 
                     if is_valid_and_needed_input:
                         session_state["invalid_input_count"] = 0
                         if needs_text and provided_text: session_state["texts"].extend(provided_text.split())
-                        if needs_image and provided_images: session_state["images"].extend(provided_images)
+                        if needs_image and provided_images:
+                            session_state["images"].extend(provided_images)
+                            session_state.setdefault("image_names", []).extend(provided_names)
                         if len(session_state["texts"]) >= p.min_texts and len(session_state["images"]) >= p.min_images:
                             await self._send_and_record(next_event, "参数已集齐，开始制作...")
                             break
@@ -325,7 +329,7 @@ class GenerationHandlers:
             # 初始化会话状态
             shortcut_texts = initial_texts
             shortcut_options = initial_options
-            parsed_texts, initial_images, parsed_options = await self.build_meme_payload(event, meme_info, text)
+            parsed_texts, initial_images, image_names, parsed_options = await self.build_meme_payload(event, meme_info, text)
             final_texts = shortcut_texts + parsed_texts
             final_options = shortcut_options
             final_options.update(parsed_options)
@@ -334,7 +338,7 @@ class GenerationHandlers:
                 final_texts = p.default_texts
 
             session_state = {
-                "texts": final_texts, "images": initial_images, "options": final_options,
+                "texts": final_texts, "images": initial_images, "image_names": image_names, "options": final_options,
                 "params": p, "invalid_input_count": 0, "status": "waiting_for_input"
             }
             self.active_sessions[session_id] = session_state
@@ -350,8 +354,14 @@ class GenerationHandlers:
 
     # --- 以下是其他辅助函数，保持不变 ---
 
-    async def _get_images_from_message(self, event: AstrMessageEvent) -> List[bytes]:
-        image_bytes_list: List[bytes] = []
+    async def _get_images_from_message(self, event: AstrMessageEvent) -> List[tuple]:
+        """从消息中提取图片数据和对应的用户名。返回 List[(bytes, str)] 的元组列表。"""
+        image_list: List[tuple] = []
+        # 获取发送者名称，用于 Comp.Image 类型的默认名称
+        try:
+            sender_name = event.get_sender_name() or str(event.get_sender_id())
+        except Exception:
+            sender_name = str(event.get_sender_id())
         async def _process(seg):
             if isinstance(seg, Comp.Image):
                 img_bytes: Optional[bytes] = None
@@ -360,31 +370,41 @@ class GenerationHandlers:
                     if isinstance(content, str) and content.startswith("base64://"): img_bytes = base64.b64decode(content[len("base64://"):])
                     elif isinstance(content, bytes): img_bytes = content
                 if not img_bytes and hasattr(seg, "url") and seg.url: img_bytes = await self.api_client._download_image(seg.url)
-                if img_bytes: image_bytes_list.append(img_bytes)
+                if img_bytes: image_list.append((img_bytes, sender_name))
             elif isinstance(seg, Comp.At) and seg.qq:
-                if b := await self._get_avatar(str(seg.qq)): image_bytes_list.append(b)
+                at_name = getattr(seg, 'name', None) or str(seg.qq)
+                if b := await self._get_avatar(str(seg.qq)): image_list.append((b, at_name))
         msgs = event.get_messages()
         if reply := next((s for s in msgs if isinstance(s, Comp.Reply)), None):
             if getattr(reply, 'chain', None):
                 for s in reply.chain: await _process(s)
         for s in msgs: await _process(s)
-        return image_bytes_list
+        return image_list
 
-    async def build_meme_payload(self, event: AstrMessageEvent, meme_info: MemeInfo, text: str) -> (List[str], List[bytes], Dict):
+    async def build_meme_payload(self, event: AstrMessageEvent, meme_info: MemeInfo, text: str) -> (List[str], List[bytes], List[str], Dict):
         image_bytes_list: List[bytes] = []
+        image_names_list: List[str] = []
         shortcut_names = event.get_extra("shortcut_names") or []
         
         initial_images = await self._get_images_from_message(event)
-        image_bytes_list.extend(initial_images)
+        for img_bytes, img_name in initial_images:
+            image_bytes_list.append(img_bytes)
+            image_names_list.append(img_name)
         
         for name in shortcut_names:
             if name.isdigit():
                 if b := await self._get_avatar(name):
                     image_bytes_list.append(b)
+                    image_names_list.append(name)
         
         if self.use_sender_when_no_image and len(image_bytes_list) < meme_info.params.min_images:
             if b := await self._get_avatar(event.get_sender_id()):
                 image_bytes_list.insert(0, b)
+                try:
+                    sender_name = event.get_sender_name() or str(event.get_sender_id())
+                except Exception:
+                    sender_name = str(event.get_sender_id())
+                image_names_list.insert(0, sender_name)
         
         text_to_parse = text.strip()
         
@@ -424,7 +444,7 @@ class GenerationHandlers:
         except (ArgumentError, ValueError, ArgParseError) as e:
             raise ArgParseError(f"参数解析或类型转换错误: {e}")
         
-        return texts, image_bytes_list, options_payload
+        return texts, image_bytes_list, image_names_list, options_payload
     
     async def _get_avatar(self, user_id: str) -> Optional[bytes]:
         if not user_id.isdigit():
@@ -439,7 +459,7 @@ class GenerationHandlers:
     async def handle_random_meme(self, event: AstrMessageEvent, arg_text: str):
         try:
             temp_meme_info = MemeInfo(key="", params=MemeParams(min_images=0, max_images=99, min_texts=0, max_texts=99), date_created=datetime.now(), keywords=[])
-            initial_texts, initial_images, _ = await self.build_meme_payload(event, temp_meme_info, arg_text)
+            initial_texts, initial_images, _, _ = await self.build_meme_payload(event, temp_meme_info, arg_text)
             n_images_initial, n_texts_initial = len(initial_images), len(initial_texts)
             final_arg_text = arg_text
             n_images_filter, n_texts_filter = n_images_initial, n_texts_initial

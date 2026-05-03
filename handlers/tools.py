@@ -57,7 +57,8 @@ class ToolHandlers:
 
     async def _get_images_for_tool(self, event: AstrMessageEvent, min_images: int = 1) -> List[str]:
         """从消息中提取所需数量的图片，上传并返回 image_id 列表"""
-        image_bytes_list = await self._get_images_from_message(event)
+        image_data = await self._get_images_from_message(event)
+        image_bytes_list = [item[0] for item in image_data]
         
         if len(image_bytes_list) < min_images:
             # 如果不够，自动补充发送者头像
